@@ -1,0 +1,132 @@
+services:
+  # ==========================================
+  # Relational Database: PostgreSQL 16
+  # Stores: Users, Problems, Submissions, Relationships
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: rce-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rce_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rce_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-rce_engine_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rce_admin} -d ${POSTGRES_DB:-rce_engine_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rce-network
+
+  # ==========================================
+  # Document Database: MongoDB 7.0
+  # Stores: Unstructured execution logs, metrics, AI Big-O payloads
+  # ==========================================
+  mongodb:
+    image: mongo:7.0
+    container_name: rce-mongodb
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-rce_mongo_admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-rce_mongo_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-rce_logs_db}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rce-network
+
+  # ==========================================
+  # Caching & Rate Limiting: Redis 7
+  # Stores: Sliding window rate limits, idempotency keys, active sessions
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: rce-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-rce_redis_password}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-rce_redis_password}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - rce-network
+
+  # ==========================================
+  # Message Broker: Apache Kafka (KRaft Mode - No Zookeeper)
+  # Topics: `code-submissions`, `execution-results`, `ai-feedback`
+  # ==========================================
+  kafka:
+    image: apache/kafka:latest
+    container_name: rce-kafka
+    restart: always
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    networks:
+      - rce-network
+
+  # ==========================================
+  # Kafka UI: Visual Topic & Consumer Monitoring
+  # Accessible at http://localhost:8080
+  # ==========================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: rce-kafka-ui
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=RCE-Kafka-Cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - rce-network
+
+networks:
+  rce-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+  kafka_data:
+    driver: local

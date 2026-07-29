@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Docker volume data mounts
+postgres_data/
+mongo_data/
+redis_data/
+kafka_data/

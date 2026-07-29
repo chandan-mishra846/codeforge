@@ -1,0 +1,21 @@
+{
+  "name": "@rce/database",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@rce/shared": "*",
+    "pg": "^8.11.5",
+    "mongoose": "^8.3.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.4",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
