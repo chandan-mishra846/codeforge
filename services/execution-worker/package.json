@@ -8,11 +8,15 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@rce/database": "*",
     "@rce/shared": "*",
-    "kafkajs": "^2.2.4",
-    "dockerode": "^4.0.2"
+    "acorn": "^8.11.3",
+    "dockerode": "^4.0.2",
+    "ioredis": "^5.3.2",
+    "kafkajs": "^2.2.4"
   },
   "devDependencies": {
+    "@types/acorn": "^4.0.0",
     "@types/dockerode": "^3.3.29",
     "@types/node": "^20.11.0",
     "ts-node-dev": "^2.0.0",

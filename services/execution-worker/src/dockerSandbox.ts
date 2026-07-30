@@ -15,21 +15,25 @@ export interface SandboxExecutionResult {
 }
 
 /**
- * Real Compiler Sandbox Execution Engine.
- * Spawns real g++, node, python, or javac compiler/interpreter processes.
- * Captures exact compiler errors, runtime exceptions, and program stdout.
+ * Real Compiler Sandbox Execution Engine for Execution Worker.
+ * Supports feeding testcase input via stdin and enforcing custom time limits.
  */
 export async function executeInSandbox(
   submissionId: string,
   language: SupportedLanguage,
-  code: string
+  code: string,
+  input: string = '',
+  timeLimitMs: number = 4000
 ): Promise<SandboxExecutionResult> {
-  const tempDir = path.join(os.tmpdir(), `rce-sandbox-${submissionId}`);
+  const tempDir = path.join(os.tmpdir(), `rce-worker-sandbox-${submissionId}-${Math.random().toString(36).substring(7)}`);
   await fs.mkdir(tempDir, { recursive: true });
 
   const fileName = language === 'java' ? 'Solution.java' : `solution.${language === 'cpp' ? 'cpp' : language === 'python' ? 'py' : 'js'}`;
   const codeFilePath = path.join(tempDir, fileName);
   await fs.writeFile(codeFilePath, code, 'utf-8');
+
+  const inputFilePath = path.join(tempDir, 'input.txt');
+  await fs.writeFile(inputFilePath, input || '', 'utf-8');
 
   const startTime = Date.now();
   let stdout = '';
@@ -40,7 +44,7 @@ export async function executeInSandbox(
   try {
     if (language === 'javascript') {
       try {
-        const { stdout: out, stderr: err } = await execAsync(`node "${codeFilePath}"`, { timeout: 4000 });
+        const { stdout: out, stderr: err } = await execAsync(`node "${codeFilePath}" < "${inputFilePath}"`, { timeout: timeLimitMs });
         stdout = out;
         stderr = err;
       } catch (jsErr: any) {
@@ -51,7 +55,7 @@ export async function executeInSandbox(
     } else if (language === 'python') {
       try {
         const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
-        const { stdout: out, stderr: err } = await execAsync(`${pyCmd} "${codeFilePath}"`, { timeout: 4000 });
+        const { stdout: out, stderr: err } = await execAsync(`${pyCmd} "${codeFilePath}" < "${inputFilePath}"`, { timeout: timeLimitMs });
         stdout = out;
         stderr = err;
       } catch (pyErr: any) {
@@ -62,10 +66,8 @@ export async function executeInSandbox(
     } else if (language === 'cpp') {
       const exePath = path.join(tempDir, process.platform === 'win32' ? 'solution.exe' : 'solution');
       try {
-        // Compile using g++
-        await execAsync(`g++ -std=c++17 "${codeFilePath}" -o "${exePath}"`, { timeout: 4000 });
-        // Run compiled binary
-        const runRes = await execAsync(`"${exePath}"`, { timeout: 4000 });
+        await execAsync(`g++ -std=c++17 "${codeFilePath}" -o "${exePath}"`, { timeout: timeLimitMs });
+        const runRes = await execAsync(`"${exePath}" < "${inputFilePath}"`, { timeout: timeLimitMs });
         stdout = runRes.stdout;
         stderr = runRes.stderr;
       } catch (cppErr: any) {
@@ -75,8 +77,8 @@ export async function executeInSandbox(
       }
     } else if (language === 'java') {
       try {
-        await execAsync(`javac "${codeFilePath}"`, { timeout: 4000 });
-        const runRes = await execAsync(`java -cp "${tempDir}" Solution`, { timeout: 4000 });
+        await execAsync(`javac "${codeFilePath}"`, { timeout: timeLimitMs });
+        const runRes = await execAsync(`java -cp "${tempDir}" Solution < "${inputFilePath}"`, { timeout: timeLimitMs });
         stdout = runRes.stdout;
         stderr = runRes.stderr;
       } catch (javaErr: any) {
@@ -88,7 +90,7 @@ export async function executeInSandbox(
   } catch (err: any) {
     if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
       timedOut = true;
-      stderr = 'Time Limit Exceeded (TLE): Code exceeded 4000ms execution limit.';
+      stderr = `Time Limit Exceeded (TLE): Code exceeded ${timeLimitMs}ms limit.`;
       exitCode = 124;
     } else {
       stdout = err.stdout || '';
